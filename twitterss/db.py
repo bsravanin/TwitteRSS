@@ -50,7 +50,7 @@ def _create_table(conn: sqlite3.Connection, table: str, schema: OrderedDict):
 
 def create_schema():
     """Create the full DB schema. Idempotent."""
-    with _get_conn() as conn:
+    with _get_conn(read_only=False) as conn:
         _create_table(conn, STATUS_TABLE, STATUS_COLUMNS)
 
         for col_name in STATUS_INDICES:

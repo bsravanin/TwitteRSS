@@ -4,9 +4,10 @@ import logging
 import os
 import pickle
 import time
-from threading import Thread
 
 import twitter
+from twitter.error import TwitterError
+from requests.exceptions import RequestException
 
 from twitterss import db
 from twitterss.config import Config
@@ -41,35 +42,34 @@ def _load_state(state_path):
         return pickle.load(pfd)
 
 
-class TimelineFetcher(object):
-    """A daemon thread that periodically fetches tweets from home timeline and saves them to DB."""
-    def __init__(self):
-        self.api = _get_conn()
-        thread = Thread(target=self.run, args=())
-        thread.daemon = True
-        thread.start()
-
-    def run(self):
+def fetch_timeline():
+    """Periodically fetch tweets from home timeline and save them to DB."""
+    api = _get_conn()
+    while True:
         tweets = None
-        while True:
-            try:
-                since_id = db.get_most_recent_status_id()
-                logging.info('Fetching tweets in timeline since %s.', since_id)
-                tweets = self.api.GetHomeTimeline(count=200, since_id=since_id)
-                if len(tweets) > 0:
-                    db.save_tweets(tweets)
-                    logging.info('Fetched and saved %s tweets.', len(tweets))
-                else:
-                    logging.info('No new tweets in timeline. Sleeping 60s.')
-                    time.sleep(60)
-            except twitter.error.TwitterError:
-                logging.exception('Hit rate-limit while getting home timeline.')
-                get_home_timeline_rate_limit = \
-                    self.api.CheckRateLimit('https://api.twitter.com/1.1/statuses/home_timeline.json')
-                duration = max(int(get_home_timeline_rate_limit.reset - time.time()) + 2, 0)
-                logging.info('Hit rate-limits. Sleeping %s seconds.', duration)
-                time.sleep(duration)
-            except Exception as e:
-                logging.exception('Error writing data to DB. Saving current data to %s for investigation.',
-                                  _save_state(tweets))
-                raise e
+        try:
+            since_id = db.get_most_recent_status_id()
+            logging.info('Fetching tweets in timeline since %s.', since_id)
+            tweets = api.GetHomeTimeline(count=200, since_id=since_id)
+            if len(tweets) > 0:
+                db.save_tweets(tweets)
+                logging.info('Fetched and saved %s tweets.', len(tweets))
+            else:
+                logging.info('No new tweets in timeline. Sleeping %ss.', Config.SLEEP_ON_CATCHING_UP_SECONDS)
+                time.sleep(Config.SLEEP_ON_CATCHING_UP_SECONDS)
+        except RequestException:
+            logging.exception('Unknown exception while making request. Sleeping %ss and refreshing connection.',
+                              Config.SLEEP_ON_CATCHING_UP_SECONDS)
+            api = _get_conn()
+        except TwitterError:
+            logging.exception('Hit rate-limit while getting home timeline.')
+            get_home_timeline_rate_limit = \
+                api.CheckRateLimit('https://api.twitter.com/1.1/statuses/home_timeline.json')
+            duration = max(int(get_home_timeline_rate_limit.reset - time.time()) + 2, 0)
+            logging.info('Hit rate-limits. Sleeping %s seconds.', duration)
+            time.sleep(duration)
+            api = _get_conn()
+        except Exception as e:
+            logging.exception('Error writing data to DB. Saving current data to %s for investigation.',
+                              _save_state(tweets))
+            raise e
