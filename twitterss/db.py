@@ -14,11 +14,18 @@ from twitterss.config import Config
 STATUS_TABLE = 'statuses'
 RSS_COLUMN = 'rss_update'
 STATUS_COLUMNS = OrderedDict({
-    'id': int,
-    'tweet_json': str,
-    RSS_COLUMN: int
+    'id': 'INTEGER PRIMARY KEY',
+    'tweet_json': 'TEXT',
+    RSS_COLUMN: 'INTEGER',
 })
 STATUS_INDICES = [RSS_COLUMN]
+
+USER_TABLE = 'users'
+USER_COLUMNS = OrderedDict({
+    'username': 'TEXT PRIMARY KEY',
+    'display_name': 'TEXT',
+    RSS_COLUMN: 'INTEGER',
+})
 
 
 def _get_conn(read_only: bool = True) -> sqlite3.Connection:
@@ -32,26 +39,17 @@ def _get_conn(read_only: bool = True) -> sqlite3.Connection:
         return sqlite3.connect(Config.DB_PATH, isolation_level=None)
 
 
-def _create_table(conn: sqlite3.Connection, table: str, schema: OrderedDict):
+def _create_table(conn: sqlite3.Connection, table: str, columns: OrderedDict):
     """Create a table in the DB using the given schema."""
-    schema_parts = []
-    for key, value in schema.items():
-        if key == 'id':
-            schema_parts.append('{} INTEGER PRIMARY KEY'.format(key))
-        elif value == int:
-            schema_parts.append('{} INTEGER'.format(key))
-        elif value == str:
-            schema_parts.append('{} TEXT'.format(key))
-        else:
-            raise ValueError('Unknown type {} for column {} while creating table {}'.format(value, key, table))
-
-    conn.execute('CREATE TABLE IF NOT EXISTS {} ({})'.format(table, ', '.join(schema_parts)))
+    schema = ['{} {}'.format(key, value) for key, value in columns.items()]
+    conn.execute('CREATE TABLE IF NOT EXISTS {} ({})'.format(table, ', '.join(schema)))
 
 
 def create_schema():
     """Create the full DB schema. Idempotent."""
     with _get_conn(read_only=False) as conn:
         _create_table(conn, STATUS_TABLE, STATUS_COLUMNS)
+        _create_table(conn, USER_TABLE, USER_COLUMNS)
 
         for col_name in STATUS_INDICES:
             index_name = '{}_{}'.format(STATUS_TABLE, col_name)
@@ -95,17 +93,31 @@ def get_tweets_to_rss_feed():
         return tweets
 
 
-def mark_tweets_as_rss_fed(status_ids: List[int]):
+def mark_tweets_as_rss_fed(username: str, display_name: str, status_ids: List[int]):
     """To be able to periodically delete old data."""
     if len(status_ids) == 0:
         return
+    update_time = int(time.time())
+    status_col_values = ', '.join(['?'] * len(status_ids))
+    user_col_names = ', '.join(["'{}'".format(key) for key in USER_COLUMNS])
+    user_col_values = ', '.join(['?'] * len(USER_COLUMNS))
+    max_rss_time = update_time - Config.DELETE_TWEETS_OLDER_THAN_SECONDS
     with _get_conn(read_only=False) as conn:
-        update_time = int(time.time())
-        col_values = ', '.join(['?'] * len(status_ids))
         conn.execute('UPDATE {} SET {} = {} WHERE id IN ({})'
-                     .format(STATUS_TABLE, RSS_COLUMN, update_time, col_values), status_ids)
+                     .format(STATUS_TABLE, RSS_COLUMN, update_time, status_col_values), status_ids)
+
+        conn.execute('REPLACE INTO {} ({}) VALUES ({})'.format(USER_TABLE, user_col_names, user_col_values),
+                     [username.lower(), display_name, update_time])
 
         # Also delete old enough data while we are at it.
-        max_rss_time = update_time - Config.DELETE_TWEETS_OLDER_THAN_SECONDS
         conn.execute('DELETE FROM {} WHERE {} > 0 AND {} < {}'
                      .format(STATUS_TABLE, RSS_COLUMN, RSS_COLUMN, max_rss_time))
+
+
+def get_all_users() -> List[tuple]:
+    """Return the full user table as a list of (username, display_name, rss_update)."""
+    with _get_conn() as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM {} ORDER BY username'.format(USER_TABLE))
+        return [(row['username'], row['display_name'], row[RSS_COLUMN]) for row in cursor.fetchall()]
