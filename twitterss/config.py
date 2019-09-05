@@ -18,7 +18,7 @@ class Config(object):
     FEED_ROOT_URL = 'https://bsravan.in/feeds'
 
     # Path to HTML keeping a list of all RSS feeds.
-    FEED_LIST_HTML = os.path.join(_root, 'feeds', 'feeds.html')
+    FEED_LIST_HTML = os.path.join(_root, 'feeds', 'twitterss.html')
 
     # Delete tweets older than these seconds if they have already been used in RSS feeds.
     DELETE_TWEETS_OLDER_THAN_SECONDS = 86400 * 7
