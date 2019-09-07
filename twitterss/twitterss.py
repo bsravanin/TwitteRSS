@@ -22,8 +22,8 @@ def main():
     logging.info('Creating schema.')
     db.create_schema()
 
-    timeline_fetcher = Thread(target=twitter_api.fetch_timeline, args=())
-    feed_generator = Thread(target=rss.generate_feeds, args=())
+    timeline_fetcher = Thread(target=twitter_api.fetch_timeline)
+    feed_generator = Thread(target=rss.generate_feeds)
 
     logging.info('Starting thread to fetch Twitter home timeline.')
     timeline_fetcher.start()

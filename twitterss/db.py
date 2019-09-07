@@ -70,7 +70,7 @@ def get_most_recent_status_id() -> [int, None]:
 
 
 def save_tweets(statuses: List[Status]):
-    """Save tweets in the DB. All tweets are marked as not having been RSS fed."""
+    """Save tweets in the DB. All tweets are marked as not having been RSS fed by default."""
     if len(statuses) == 0:
         return
     rows = [(status.id, status.AsJsonString(), 0) for status in statuses]
@@ -94,7 +94,7 @@ def get_tweets_to_rss_feed():
 
 
 def mark_tweets_as_rss_fed(username: str, display_name: str, status_ids: List[int]):
-    """To be able to periodically delete old data."""
+    """To avoid duplicate RSS items, and to be able to periodically delete old data."""
     if len(status_ids) == 0:
         return
     update_time = int(time.time())
@@ -115,7 +115,7 @@ def mark_tweets_as_rss_fed(username: str, display_name: str, status_ids: List[in
 
 
 def get_all_users() -> List[tuple]:
-    """Return the full user table as a list of (username, display_name, rss_update)."""
+    """Return the full user table as a list of (username, display_name, rss_update). Used to write FEED_LIST_HTML."""
     with _get_conn() as conn:
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()

@@ -23,8 +23,11 @@ class Config(object):
     # Delete tweets older than these seconds if they have already been used in RSS feeds.
     DELETE_TWEETS_OLDER_THAN_SECONDS = 86400 * 7
 
-    # Max number of items kept in the RSS feed. Can be larger than for blogs because tweets are tiny.
+    # Max number of items kept in the RSS feed. Blogs appear to use 10.
     RSS_MAX_ITEMS = 100
 
     # How quickly to retry after the timeline is all caught up.
     SLEEP_ON_CATCHING_UP_SECONDS = 60
+
+    # To save error data during crashes.
+    CRASH_DIR = os.path.join(_root, 'crash')

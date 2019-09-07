@@ -1,5 +1,4 @@
 """Layer to create RSS feeds."""
-# TODO: Switching to lxml might be simpler.
 
 import logging
 import os
@@ -35,6 +34,7 @@ NS_SPECIAL_HANDLING = {
     'dc:creator': [r'xmlns_dc_creator', r'ns\d:creator'],
     'content:encoded': [r'xmlns_content_encoded', r'ns\d:encoded'],
 }
+RSS_TIME_FORMAT = '%a, %d %b %Y %H:%M:%S UTC'   # Like 'Mon, 30 Sep 2002 01:56:02 GMT'
 
 
 def _get_user_url(username: str) -> str:
@@ -65,16 +65,16 @@ def get_feed(feed_path: str, username: str, profile_image_url: str) -> ElementTr
     return ElementTree.ElementTree(ElementTree.fromstring(root_str))
 
 
-def _rss_timeformat(epoch: int) -> str:
-    # Like "Mon, 30 Sep 2002 01:56:02 GMT"
-    return datetime.fromtimestamp(epoch).strftime('%a, %d %b %Y %H:%M:%S UTC')
+def _rss_time_format(epoch: int) -> str:
+    return datetime.fromtimestamp(epoch).strftime(RSS_TIME_FORMAT)
 
 
 def _rss_time_now() -> str:
-    return datetime.utcnow().strftime('%a, %d %b %Y %H:%M:%S UTC')
+    return datetime.utcnow().strftime(RSS_TIME_FORMAT)
 
 
 class EnhancedTweet(object):
+    """A wrapper around Status, with helper attributes and methods to assist creating a corresponding RSS item."""
     def __init__(self, tweet: Status):
         self.inner = tweet
         self.id = tweet.id
@@ -87,6 +87,8 @@ class EnhancedTweet(object):
         self.raw_json = tweet._json
 
     def get_rss_item(self) -> ElementTree.Element:
+        """The main method of EnhancedTweet. Because namespaces are not available at the element level, this uses
+        custom property names."""
         base_item = '''
 <item>
     <title>{display_name} tweeted {id}</title>
@@ -98,7 +100,7 @@ class EnhancedTweet(object):
     <description />
     <xmlns_content_encoded>RSS_ITEM_PLACE_HOLDER</xmlns_content_encoded>
 </item>'''.format(display_name=self.display_name, id=self.id, url=self.url,
-                  pub_date=_rss_timeformat(self.inner.created_at_in_seconds))
+                  pub_date=_rss_time_format(self.inner.created_at_in_seconds))
         item = base_item.replace('RSS_ITEM_PLACE_HOLDER', self.get_content())
         try:
             return ElementTree.fromstring(item)
@@ -109,7 +111,7 @@ class EnhancedTweet(object):
 
     def _add_sanitized_text(self, content: StringIO):
         tweet = self.inner
-        text = escape(tweet.full_text or tweet.text or '')
+        text = escape(tweet.full_text or tweet.text or '').replace('\n', '<br/>')
         # for user in self.raw_json.get('user_mentions', []):
         #     username = user.get('screen_name')
         #     if username is not None:
@@ -130,7 +132,7 @@ class EnhancedTweet(object):
             media_type = media.get('type')
             if media_type == 'photo':
                 self._add_photo(content, media.get('media_url_https'), media.get('ext_alt_text'))
-            elif media_type == 'video':
+            elif media_type in ['animated_gif', 'video']:
                 video = media.get('video_info', {}).get('variants', [None])[-1]
                 if video is not None:
                     content.write('''
@@ -166,6 +168,8 @@ class EnhancedTweet(object):
                     content.write('<p><a href="{}">{}</a></p>'.format(sanitized_url, sanitized_url))
 
     def get_content(self) -> str:
+        """The crux of RSS content creation. Whereas get_rss_item puts together the XML, this method creates the
+        HTML content that becomes the content of the RSS item."""
         content = StringIO()
         tweet = self.inner
         if self.is_retweet:
@@ -196,15 +200,22 @@ class EnhancedTweet(object):
 
 
 def _get_namespace_handled_xml(rss: ElementTree.Element) -> str:
+    """Because xml.etree doesn't seem to handle namespaces well and because EnhancedTweet deals only with XML elements
+    without access to the entire tree, customer property names are (hackily) converted into namespaces and a namespsace
+    section is added to the root."""
     feed_str = ElementTree.tostring(rss, encoding='unicode', method='xml')
     for tag, regexes in NS_SPECIAL_HANDLING.items():
         for regex in regexes:
             feed_str = re.sub(regex, tag, feed_str)
-    feed_str = re.sub(r'\n+', '\n', feed_str)
+    feed_str = re.sub(r'\n+', '\n', feed_str)\
+        .replace('</item></channel>', '</item>\n</channel>')\
+        .replace('<content:encoded>', '<content:encoded><![CDATA[')\
+        .replace('</content:encoded>', ']]></content:encoded>')
     return re.sub(r'^.* version="2.0">?', HEADER, feed_str)
 
 
 def _update_feed(username: str, tweets: List[Status]):
+    """Assumption: All tweets in the list are owned by the username, and are to be written to that user's RSS feed."""
     feed_path = os.path.join(Config.FEED_ROOT_PATH, _get_feed_name(username))
     profile_image_url = tweets[0].user.profile_image_url_https or 'https://abs.twimg.com/favicons/win8-tile-144.png'
     feed = get_feed(feed_path, username, profile_image_url)
@@ -225,6 +236,8 @@ def _update_feed(username: str, tweets: List[Status]):
 
 
 def _update_feeds_html():
+    """Write Config.FEED_LIST_HTML, a useful page that lists all the RSS feeds available from this app at any given
+    moment."""
     with open(FEEDS_HTML_TEMPLATE) as hfd:
         full_html = hfd.read()
     full_trs = []
@@ -232,7 +245,7 @@ def _update_feeds_html():
         name_td = '<td>{}</td>'.format(display_name)
         twitter_td = '<td><a href="{}">@{}</a></td>'.format(_get_user_url(username), username)
         feed_td = '<td><a href="{}">{}</a></td>'.format(_get_feed_url(username), _get_feed_name(username))
-        timestamp_td = '<td>{}</td>'.format(_rss_timeformat(timestamp))
+        timestamp_td = '<td>{}</td>'.format(_rss_time_format(timestamp))
         full_trs.append('<tr>{}{}{}{}</tr>'.format(name_td, twitter_td, feed_td, timestamp_td))
 
     full_html = full_html.replace('PLACEHOLDER', '\n'.join(full_trs))
@@ -240,20 +253,27 @@ def _update_feeds_html():
         hfd.write(full_html)
 
 
-def generate_feeds():
-    """Periodically fetch new tweets from the DB and update their corresponding RSS feeds."""
-    os.makedirs(Config.FEED_ROOT_PATH, exist_ok=True)
-    while True:
-        all_new_tweets = db.get_tweets_to_rss_feed()
-        if len(all_new_tweets) == 0:
-            logging.info('No new tweets in DB. Sleeping %ss.', Config.SLEEP_ON_CATCHING_UP_SECONDS)
-            time.sleep(Config.SLEEP_ON_CATCHING_UP_SECONDS)
-            continue
+def _generate_feeds_once(mark_tweets_as_rss_fed: bool = True) -> int:
+    """Fetch new tweets from the DB and update their corresponding RSS feeds."""
+    all_new_tweets = db.get_tweets_to_rss_feed()
+    if len(all_new_tweets) > 0:
         username_to_tweets = defaultdict(list)
         for tweet in all_new_tweets:
             username_to_tweets[tweet.user.screen_name].append(tweet)
         for username, tweets in username_to_tweets.items():
             logging.info('Updating RSS feed of %s with %s tweets.', username, len(tweets))
             _update_feed(username, tweets)
-            db.mark_tweets_as_rss_fed(username, tweets[0].user.name, [tweet.id for tweet in tweets])
+            if mark_tweets_as_rss_fed:
+                db.mark_tweets_as_rss_fed(username, tweets[0].user.name, [tweet.id for tweet in tweets])
         _update_feeds_html()
+    return len(all_new_tweets)
+
+
+def generate_feeds():
+    """Periodically update RSS feeds with new tweets."""
+    os.makedirs(Config.FEED_ROOT_PATH, exist_ok=True)
+    while True:
+        items_created = _generate_feeds_once()
+        if items_created == 0:
+            logging.info('No new tweets in DB. Sleeping %ss.', Config.SLEEP_ON_CATCHING_UP_SECONDS)
+            time.sleep(Config.SLEEP_ON_CATCHING_UP_SECONDS)

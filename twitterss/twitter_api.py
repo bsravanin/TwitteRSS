@@ -12,7 +12,7 @@ from requests.exceptions import RequestException
 from twitterss import db
 from twitterss.config import Config
 
-CREDS_KEYS = {'consumer_key', 'consumer_secret', 'access_token_key', 'access_token_secret'}
+CREDENTIAL_KEYS = {'consumer_key', 'consumer_secret', 'access_token_key', 'access_token_secret'}
 
 
 def _get_conn() -> twitter.Api:
@@ -21,25 +21,19 @@ def _get_conn() -> twitter.Api:
         raise IOError('Could not find credentials at {}.'.format(Config.CREDENTIALS))
 
     with open(Config.CREDENTIALS) as cfd:
-        creds = json.load(cfd)
-        if set(creds.keys()) == CREDS_KEYS:
-            return twitter.Api(**creds, tweet_mode='extended')
+        credentials = json.load(cfd)
+        if set(credentials.keys()) == CREDENTIAL_KEYS:
+            return twitter.Api(**credentials, tweet_mode='extended')
         else:
-            raise IOError('%s is expected to have {}.'.format(CREDS_KEYS))
+            raise IOError('%s is expected to have {}.'.format(CREDENTIAL_KEYS))
 
 
 def _save_state(tweets: object):
     """Save the state into a pickle file for future investigations."""
-    state = 'tweets_{}.dat'.format(int(time.time()))
+    state = os.path.join(Config.CRASH_DIR, 'tweets_{}.dat'.format(int(time.time())))
     with open(state, 'wb') as pfd:
         pickle.dump(tweets, pfd)
     return state
-
-
-def _load_state(state_path):
-    """Load the state saved in a pickle file. Used only during investigations."""
-    with open(state_path, 'rb') as pfd:
-        return pickle.load(pfd)
 
 
 def fetch_timeline():
