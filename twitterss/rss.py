@@ -4,7 +4,6 @@ import logging
 import os
 import re
 import time
-import xml.etree.ElementTree as ElementTree
 from collections import defaultdict
 from datetime import datetime
 from io import StringIO
@@ -16,24 +15,9 @@ from twitter.models import Status
 from twitterss import db
 from twitterss.config import Config
 
-
 TEMPLATES_ROOT = os.path.join(os.path.dirname(__file__), 'templates')
 CHANNEL_XML_TEMPLATE = os.path.join(TEMPLATES_ROOT, 'channel.xml')
 FEEDS_HTML_TEMPLATE = os.path.join(TEMPLATES_ROOT, 'feeds.html')
-HEADER = '''<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0"
-    xmlns:atom="http://www.w3.org/2005/Atom"
-    xmlns:sy="http://purl.org/rss/1.0/modules/syndication/"
-    xmlns:dc="http://purl.org/dc/elements/1.1/"
-    xmlns:content="http://purl.org/rss/1.0/modules/content/">
-'''
-NS_SPECIAL_HANDLING = {
-    'atom:link': [r'xmlns_atom_link', r'ns\d:link'],
-    'sy:updatePeriod': [r'xmlns_sy_update_period', r'ns\d:updatePeriod'],
-    'sy:updateFrequency': [r'xmlns_sy_update_frequency', r'ns\d:updateFrequency'],
-    'dc:creator': [r'xmlns_dc_creator', r'ns\d:creator'],
-    'content:encoded': [r'xmlns_content_encoded', r'ns\d:encoded'],
-}
 RSS_TIME_FORMAT = '%a, %d %b %Y %H:%M:%S UTC'   # Like 'Mon, 30 Sep 2002 01:56:02 GMT'
 
 
@@ -53,24 +37,33 @@ def _get_feed_url(username: str) -> str:
     return '{}/{}'.format(Config.FEED_ROOT_URL, _get_feed_name(username))
 
 
-def get_feed(feed_path: str, username: str, profile_image_url: str) -> ElementTree:
-    """Return RSS feed of user as an XML. Initialize if necessary."""
-    if os.path.isfile(feed_path):
-        return ElementTree.parse(feed_path)
-    with open(CHANNEL_XML_TEMPLATE) as cfd:
-        channel_xml = cfd.read()
-    root_str = channel_xml.format(
-        username=username, feed_url=_get_feed_url(username), user_url=_get_user_url(username),
-        profile_image_url=profile_image_url)
-    return ElementTree.ElementTree(ElementTree.fromstring(root_str))
-
-
 def _rss_time_format(epoch: int) -> str:
     return datetime.fromtimestamp(epoch).strftime(RSS_TIME_FORMAT)
 
 
 def _rss_time_now() -> str:
     return datetime.utcnow().strftime(RSS_TIME_FORMAT)
+
+
+def _initialize_feed(username: str, profile_image_url: str) -> str:
+    """Initialize RSS feed for user as an XML string."""
+    with open(CHANNEL_XML_TEMPLATE) as cfd:
+        channel_xml = cfd.read()
+    return channel_xml.format(
+        username=username, feed_url=_get_feed_url(username), user_url=_get_user_url(username),
+        last_build_date=_rss_time_now(), profile_image_url=profile_image_url)
+
+
+def _get_current_rss_items(feed_path: str) -> List[str]:
+    """Return items in existing RSS feed of user as a list of XML strings."""
+    if os.path.isfile(feed_path):
+        with open(feed_path) as xfd:
+            feed_str = xfd.read()
+        items = ['<item>{}'.format(ip) for ip in feed_str.split('<item>')[1:]]
+        if len(items) > 0:
+            items[-1] = items[-1].replace('</channel>', '').replace('</rss>', '')
+        return items
+    return []
 
 
 class EnhancedTweet(object):
@@ -86,7 +79,7 @@ class EnhancedTweet(object):
         self.has_quoted = tweet.quoted_status is not None
         self.raw_json = tweet._json
 
-    def get_rss_item(self) -> ElementTree.Element:
+    def get_rss_item(self) -> str:
         """The main method of EnhancedTweet. Because namespaces are not available at the element level, this uses
         custom property names."""
         base_item = '''
@@ -94,24 +87,20 @@ class EnhancedTweet(object):
     <title>{display_name} tweeted {id}</title>
     <link>{url}</link>
     <pubDate>{pub_date}</pubDate>
-    <xmlns_dc_creator>{display_name}</xmlns_dc_creator>
+    <dc:creator>{display_name}</dc:creator>
     <category>Tweets</category>
     <guid isPermaLink="false">{url}</guid>
     <description />
-    <xmlns_content_encoded>RSS_ITEM_PLACE_HOLDER</xmlns_content_encoded>
+    <content:encoded><![CDATA[
+        RSS_ITEM_PLACE_HOLDER
+    ]]></content:encoded>
 </item>'''.format(display_name=self.display_name, id=self.id, url=self.url,
                   pub_date=_rss_time_format(self.inner.created_at_in_seconds))
-        item = base_item.replace('RSS_ITEM_PLACE_HOLDER', self.get_content())
-        try:
-            return ElementTree.fromstring(item)
-        except:
-            logging.exception('Failed to create RSS item for %s. Item: %s', self.url, item)
-            item = base_item.replace('RSS_ITEM_PLACE_HOLDER', 'RSS Error. Please read {} directly.'.format(self.url))
-            return ElementTree.fromstring(item)
+        return base_item.replace('RSS_ITEM_PLACE_HOLDER', self.get_content())
 
     def _add_sanitized_text(self, content: StringIO):
         tweet = self.inner
-        text = escape(tweet.full_text or tweet.text or '').replace('\n', '<br/>')
+        text = (tweet.full_text or tweet.text or '').replace('\n', '<br/>')
         # for user in self.raw_json.get('user_mentions', []):
         #     username = user.get('screen_name')
         #     if username is not None:
@@ -164,8 +153,7 @@ class EnhancedTweet(object):
             for url in urls:
                 final_url = url.get('expanded_url') or url.get('url')
                 if final_url is not None:
-                    sanitized_url = escape(final_url)
-                    content.write('<p><a href="{}">{}</a></p>'.format(sanitized_url, sanitized_url))
+                    content.write('<p><a href="{}">{}</a></p>'.format(final_url, final_url))
 
     def get_content(self) -> str:
         """The crux of RSS content creation. Whereas get_rss_item puts together the XML, this method creates the
@@ -199,40 +187,20 @@ class EnhancedTweet(object):
         return content.getvalue()
 
 
-def _get_namespace_handled_xml(rss: ElementTree.Element) -> str:
-    """Because xml.etree doesn't seem to handle namespaces well and because EnhancedTweet deals only with XML elements
-    without access to the entire tree, customer property names are (hackily) converted into namespaces and a namespsace
-    section is added to the root."""
-    feed_str = ElementTree.tostring(rss, encoding='unicode', method='xml')
-    for tag, regexes in NS_SPECIAL_HANDLING.items():
-        for regex in regexes:
-            feed_str = re.sub(regex, tag, feed_str)
-    feed_str = re.sub(r'\n+', '\n', feed_str)\
-        .replace('</item></channel>', '</item>\n</channel>')\
-        .replace('<content:encoded>', '<content:encoded><![CDATA[')\
-        .replace('</content:encoded>', ']]></content:encoded>')
-    return re.sub(r'^.* version="2.0">?', HEADER, feed_str)
-
-
 def _update_feed(username: str, tweets: List[Status]):
     """Assumption: All tweets in the list are owned by the username, and are to be written to that user's RSS feed."""
     feed_path = os.path.join(Config.FEED_ROOT_PATH, _get_feed_name(username))
     profile_image_url = tweets[0].user.profile_image_url_https or 'https://abs.twimg.com/favicons/win8-tile-144.png'
-    feed = get_feed(feed_path, username, profile_image_url)
-    rss = feed.getroot()
-    channel = rss[0]
-    min_remove_idx = Config.RSS_MAX_ITEMS - len(tweets)
-    for index, item in enumerate(channel.iter('item')):
-        if index > min_remove_idx:
-            channel.remove(item)
-    for index, tweet in enumerate(tweets):
-        # TODO: Hard-coded assumption that items start at the 10th place as channel children.
-        channel.insert(index + 10, EnhancedTweet(tweet).get_rss_item())
-    for lastBuildDate in channel.iter('lastBuildDate'):
-        lastBuildDate.text = _rss_time_now()
-    feed_str = _get_namespace_handled_xml(rss)
+    feed = _initialize_feed(username, profile_image_url)
+    rss_items = [EnhancedTweet(tweet).get_rss_item() for tweet in tweets]
+    max_old_items = Config.RSS_MAX_ITEMS - len(tweets)
+    if max_old_items > 0:
+        rss_items.extend(_get_current_rss_items(feed_path)[:max_old_items])
+    full_feed = '{feed_header}{items}\n</channel>\n</rss>'.format(
+        feed_header=feed.replace('</channel>', '').replace('</rss>', ''),
+        items='\n'.join(rss_items))
     with open(feed_path, 'w') as xfd:
-        xfd.write(feed_str)
+        xfd.write(re.sub(r'\n+', '\n', full_feed))
 
 
 def _update_feeds_html():

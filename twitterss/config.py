@@ -27,7 +27,7 @@ class Config(object):
     RSS_MAX_ITEMS = 100
 
     # How quickly to retry after the timeline is all caught up.
-    SLEEP_ON_CATCHING_UP_SECONDS = 60
+    SLEEP_ON_CATCHING_UP_SECONDS = 600
 
     # To save error data during crashes.
     CRASH_DIR = os.path.join(_root, 'crash')
