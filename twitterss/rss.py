@@ -96,18 +96,30 @@ class EnhancedTweet(object):
     ]]></content:encoded>
 </item>'''.format(display_name=self.display_name, id=self.id, url=self.url,
                   pub_date=_rss_time_format(self.inner.created_at_in_seconds))
-        return base_item.replace('RSS_ITEM_PLACE_HOLDER', self.get_content())
+        try:
+            return base_item.replace('RSS_ITEM_PLACE_HOLDER', self.get_content())
+        except:
+            logging.exception('Failed to create RSS item for %s.', self.url)
+            return base_item.replace('RSS_ITEM_PLACE_HOLDER', 'RSS Error. Please read {} directly.'.format(self.url))
 
     def _add_sanitized_text(self, content: StringIO):
         tweet = self.inner
         text = (tweet.full_text or tweet.text or '').replace('\n', '<br/>')
-        # for user in self.raw_json.get('user_mentions', []):
-        #     username = user.get('screen_name')
-        #     if username is not None:
-        #         href = '<a href="{}">@{}</a>'.format(_get_user_url(username), username)
-        #         text = re.sub(r'@%s\b' % username, href, text, flags=re.IGNORECASE)
+        if self.has_quoted:
+            quoted_status = self.inner.quoted_status
+            quoted_url = _get_tweet_url(quoted_status.user.screen_name, quoted_status.id).lower()
+        else:
+            quoted_url = None
+        urls = {url['url']: url['expanded_url'] for url in self.raw_json.get('urls', [])}
+        for url in self.raw_json.get('media', []):
+            urls[url['url']] = 'REMOVE_MEDIA_URL'
+        for url, expanded_url in urls.items():
+            if expanded_url == 'REMOVE_MEDIA_URL' or (quoted_url is not None and quoted_url == expanded_url.lower()):
+                text = text.replace(url, '')
+            else:
+                text = text.replace(url, '<a href="{}">{}</a>'.format(expanded_url, expanded_url))
         if text != '':
-            content.write('<p>{text}</p>\n'.format(text=text))
+            content.write('<p>{text}</p>\n'.format(text=text.strip()))
 
     def _add_photo(self, content: StringIO, media_url: str = None, alt_text: str = None):
         if media_url is not None:
@@ -137,23 +149,7 @@ class EnhancedTweet(object):
                     media_url = media.get('expanded_url') or media.get('url') or media.get('media_url_https')
                     self._add_photo(content, media_url)
             else:
-                content.write('<p>This tweet has media elements that cannot be rendered in this RSS feed.</p>')
-
-    def _add_urls(self, content: StringIO):
-        if self.has_quoted:
-            quoted_status = self.inner.quoted_status
-            quoted_url = _get_tweet_url(quoted_status.user.screen_name, quoted_status.id)
-        else:
-            quoted_url = None
-        urls = self.raw_json.get('urls', [])
-        if quoted_url in urls:
-            urls.remove(quoted_url)
-        if len(urls) > 0:
-            content.write('<p>URLs mentioned in this tweet:</p>')
-            for url in urls:
-                final_url = url.get('expanded_url') or url.get('url')
-                if final_url is not None:
-                    content.write('<p><a href="{}">{}</a></p>'.format(final_url, final_url))
+                content.write('<p>This tweet has media elements that cannot be rendered in this RSS feed.</p>\n')
 
     def get_content(self) -> str:
         """The crux of RSS content creation. Whereas get_rss_item puts together the XML, this method creates the
@@ -173,7 +169,6 @@ class EnhancedTweet(object):
         content.write('<blockquote>\n')
         self._add_sanitized_text(content)
         self._add_media(content)
-        self._add_urls(content)
 
         content.write('</blockquote>\n')
         content.write(
@@ -181,7 +176,7 @@ class EnhancedTweet(object):
                 name=self.display_name, username=self.username, url=self.url, created_at=tweet.created_at))
 
         if self.has_quoted:
-            content.write('<p>{name} tweeted this while quoting the below tweet.</p>'.format(name=self.display_name))
+            content.write('<p>{name} tweeted this while quoting the below tweet.</p>\n'.format(name=self.display_name))
             content.write(EnhancedTweet(tweet.quoted_status).get_content())
 
         return content.getvalue()
