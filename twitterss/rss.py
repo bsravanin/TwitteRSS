@@ -118,6 +118,11 @@ class EnhancedTweet(object):
                 text = text.replace(url, '')
             else:
                 text = text.replace(url, '<a href="{}">{}</a>'.format(expanded_url, expanded_url))
+        for um in self.raw_json.get('user_mentions', []):
+            username = um['screen_name']
+            user_url = _get_user_url(username)
+            regex = re.compile(r"@%s\b" % username, re.IGNORECASE)  # double, not single quotes.
+            text = re.sub(regex, '<a href="{}">@{}</a>'.format(user_url, username), text)
         if text != '':
             content.write('<p>{text}</p>\n'.format(text=text.strip()))
 
