@@ -191,7 +191,19 @@ def _update_feed(username: str, tweets: List[Status]):
     feed_path = os.path.join(Config.FEED_ROOT_PATH, _get_feed_name(username))
     profile_image_url = tweets[0].user.profile_image_url_https or 'https://abs.twimg.com/favicons/win8-tile-144.png'
     feed = _initialize_feed(username, profile_image_url)
-    rss_items = [EnhancedTweet(tweet).get_rss_item() for tweet in tweets]
+    rss_items = []
+    for tweet in tweets:
+        if tweet.in_reply_to_status_id is not None and tweet.retweeted_status is None \
+                and tweet.in_reply_to_user_id != tweet.user.id:
+            # Home timeline shows replies between users that "I" follow. They wouldn't show up on a regular
+            # User timeline. So skipping them. Based on tests, only about 1% of tweets fall under this category.
+            logging.info('%s is a reply to someone else, and not a retweet. Skipping...',
+                         _get_tweet_url(tweet.user.screen_name, tweet.id))
+            continue
+        else:
+            rss_items.append(EnhancedTweet(tweet).get_rss_item())
+    if len(rss_items) == 0:
+        return
     max_old_items = Config.RSS_MAX_ITEMS - len(tweets)
     if max_old_items > 0:
         rss_items.extend(_get_current_rss_items(feed_path)[:max_old_items])
