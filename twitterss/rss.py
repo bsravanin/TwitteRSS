@@ -174,8 +174,10 @@ class EnhancedTweet(object):
 
         content.write('</blockquote>\n')
         content.write(
-            '<p>-- {name} (@{username}) <a href="{url}">{created_at}</a></p>\n'.format(
-                name=self.display_name, username=self.username, url=self.url, created_at=tweet.created_at))
+            '<p><img src="{img_url}" width="32" height="32" class="alignleft" /> '
+            '-- {name} (@{username}) <a href="{url}">{created_at}</a></p>\n'.format(
+                img_url=tweet.user.profile_image_url_https, name=self.display_name, username=self.username,
+                url=self.url, created_at=tweet.created_at))
 
         if self.has_quoted:
             content.write('<p>{name} tweeted this while quoting the below tweet.</p>\n'.format(name=self.display_name))
