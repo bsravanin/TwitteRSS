@@ -142,14 +142,11 @@ class EnhancedTweet(object):
                 video = media.get('video_info', {}).get('variants', [None])[-1]
                 if video is not None:
                     content.write('''
-<p><object width="640" height="480">
-<param name="movie" value="{video}"></param>
-<param name="wmode" value="transparent"></param>
-<embed src="{video}" type="{content_type}" wmode="transparent" width="640" height="480"></embed>
-</object>
-<noembed><a href="{video}">Click here to view video</a></noembed>
-</p>'
-'''.format(video=video['url'], content_type=video['content_type']))
+<p><a href="{video_url}"><video width="640" height="480" controls>
+    <source src="{video_url}" type="{content_type}">
+    This browser or application does not appear to support the video tag.
+</video></a></p>
+'''.format(video_url=video['url'], content_type=video['content_type']))
                 else:
                     media_url = media.get('expanded_url') or media.get('url') or media.get('media_url_https')
                     self._add_photo(content, media_url)
