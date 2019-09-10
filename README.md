@@ -5,6 +5,23 @@ per followed user.
 
 [Example Feeds](https://bsravan.in/feeds/twitterss.html)
 
+Setup
+=====
+1. Clone or download [the code](https://github.com/bsravanin/TwitteRSS).
+1. Update the configuration in `TwitteRSS/twitterss/config.py` per your requirements. Especially pay
+   attention to `FEED_ROOT_URL` and `CREDENTIALS`. For the latter, also refer [Security](#security)
+   and setup your Twitter API credentials.
+1. Run the following commands from a terminal:
+   1. `cd TwitteRSS`
+   1. `tox -e py37`
+   1. `source .tox/py37/bin/activate`
+   1. `./twitterss/twitterss.py`
+1. Open [feeds/twitterss.html](feeds/twitterss.html) in a browser.
+
+*NOTE*: I tested this using Python v3.7.x and host this on my website using Python v3.6.x, but I
+suspect it will work fine for any Python that can install
+[the requirements](https://github.com/bsravanin/TwitteRSS/blob/master/tox.ini) with trivial changes.
+
 Design
 ======
 The server runs two threads:
