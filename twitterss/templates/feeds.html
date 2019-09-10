@@ -40,5 +40,13 @@
         $('#twitterss-feeds').DataTable({searching: false, paging: false, info: false});
     });
   </script>
+  <script>
+    var rss_updates = document.getElementsByClassName('rss_update');
+    for(var i = 0; i < rss_updates.length; i++)
+    {
+      var elem = rss_updates.item(i);
+      elem.innerHTML = new Date(elem.getAttribute('data-tstamp'));
+    }
+  </script>
 </body>
 </html>

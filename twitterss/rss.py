@@ -224,7 +224,8 @@ def _update_feeds_html():
         name_td = '<td>{}</td>'.format(display_name)
         twitter_td = '<td><a href="{}">@{}</a></td>'.format(_get_user_url(username), username)
         feed_td = '<td><a href="{}">{}</a></td>'.format(_get_feed_url(username), _get_feed_name(username))
-        timestamp_td = '<td>{}</td>'.format(_rss_time_format(timestamp))
+        data_tstamp = _rss_time_format(timestamp)
+        timestamp_td = '<td class="rss_update" data-tstamp="{}">{}</td>'.format(data_tstamp, data_tstamp)
         full_trs.append('<tr>{}{}{}{}</tr>'.format(name_td, twitter_td, feed_td, timestamp_td))
 
     full_html = full_html.replace('PLACEHOLDER', '\n'.join(full_trs))
