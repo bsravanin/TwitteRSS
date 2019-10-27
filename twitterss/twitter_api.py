@@ -54,6 +54,7 @@ def fetch_timeline():
         except RequestException:
             logging.exception('Unknown exception while making request. Sleeping %ss and refreshing connection.',
                               Config.SLEEP_ON_CATCHING_UP_SECONDS)
+            time.sleep(Config.SLEEP_ON_CATCHING_UP_SECONDS)
             api = _get_conn()
         except TwitterError:
             logging.exception('Hit rate-limit while getting home timeline.')
