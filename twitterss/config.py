@@ -3,6 +3,7 @@ import os
 
 class Config(object):
     """The single place to configure everything configurable in the app."""
+
     _root = os.getcwd()
 
     # Path to JSON containing Twitter API credentials

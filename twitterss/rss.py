@@ -18,7 +18,7 @@ from twitterss.config import Config
 TEMPLATES_ROOT = os.path.join(os.path.dirname(__file__), 'templates')
 CHANNEL_XML_TEMPLATE = os.path.join(TEMPLATES_ROOT, 'channel.xml')
 FEEDS_HTML_TEMPLATE = os.path.join(TEMPLATES_ROOT, 'feeds.html')
-RSS_TIME_FORMAT = '%a, %d %b %Y %H:%M:%S UTC'   # Like 'Mon, 30 Sep 2002 01:56:02 GMT'
+RSS_TIME_FORMAT = '%a, %d %b %Y %H:%M:%S UTC'  # Like 'Mon, 30 Sep 2002 01:56:02 GMT'
 
 
 def _get_user_url(username: str) -> str:
@@ -50,8 +50,12 @@ def _initialize_feed(username: str, profile_image_url: str) -> str:
     with open(CHANNEL_XML_TEMPLATE) as cfd:
         channel_xml = cfd.read()
     return channel_xml.format(
-        username=username, feed_url=_get_feed_url(username), user_url=_get_user_url(username),
-        last_build_date=_rss_time_now(), profile_image_url=profile_image_url)
+        username=username,
+        feed_url=_get_feed_url(username),
+        user_url=_get_user_url(username),
+        last_build_date=_rss_time_now(),
+        profile_image_url=profile_image_url,
+    )
 
 
 def _get_current_rss_items(feed_path: str) -> List[str]:
@@ -68,6 +72,7 @@ def _get_current_rss_items(feed_path: str) -> List[str]:
 
 class EnhancedTweet(object):
     """A wrapper around Status, with helper attributes and methods to assist creating a corresponding RSS item."""
+
     def __init__(self, tweet: Status):
         self.inner = tweet
         self.id = tweet.id
@@ -94,13 +99,17 @@ class EnhancedTweet(object):
     <content:encoded><![CDATA[
         RSS_ITEM_PLACE_HOLDER
     ]]></content:encoded>
-</item>'''.format(display_name=self.display_name, id=self.id, url=self.url,
-                  pub_date=_rss_time_format(self.inner.created_at_in_seconds))
+</item>'''.format(
+            display_name=self.display_name,
+            id=self.id,
+            url=self.url,
+            pub_date=_rss_time_format(self.inner.created_at_in_seconds),
+        )
         try:
             return base_item.replace('RSS_ITEM_PLACE_HOLDER', self.get_content())
         except:
             logging.exception('Failed to create RSS item for %s.', self.url)
-            return base_item.replace('RSS_ITEM_PLACE_HOLDER', 'RSS Error. Please read {} directly.'.format(self.url))
+            return base_item.replace('RSS_ITEM_PLACE_HOLDER', 'RSS Error. Please read {} directly.'.format(self.url),)
 
     def _add_sanitized_text(self, content: StringIO):
         tweet = self.inner
@@ -130,8 +139,10 @@ class EnhancedTweet(object):
         if media_url is not None:
             content.write(
                 '<p><a href="{img_url}"><img src="{img_url}" alt="{ext_alt_text}" width="640" height="480" '
-                'class="aligncenter size-large" sizes="(max-width: 640px) 100vw, 640px" /></a></p>\n'
-                .format(img_url=media_url, ext_alt_text=alt_text or ''))
+                'class="aligncenter size-large" sizes="(max-width: 640px) 100vw, 640px" /></a></p>\n'.format(
+                    img_url=media_url, ext_alt_text=alt_text or ''
+                )
+            )
 
     def _add_media(self, content: StringIO):
         for media in self.raw_json.get('media', []):
@@ -141,12 +152,16 @@ class EnhancedTweet(object):
             elif media_type in ['animated_gif', 'video']:
                 video = media.get('video_info', {}).get('variants', [None])[-1]
                 if video is not None:
-                    content.write('''
+                    content.write(
+                        '''
 <p><a href="{video_url}"><video width="640" height="480" controls>
     <source src="{video_url}" type="{content_type}">
     This browser or application does not appear to support the video tag.
 </video></a></p>
-'''.format(video_url=video['url'], content_type=video['content_type']))
+'''.format(
+                            video_url=video['url'], content_type=video['content_type']
+                        )
+                    )
                 else:
                     media_url = media.get('expanded_url') or media.get('url') or media.get('media_url_https')
                     self._add_photo(content, media_url)
@@ -165,8 +180,11 @@ class EnhancedTweet(object):
 
         if self.is_reply:
             reply_url = _get_tweet_url(tweet.in_reply_to_screen_name, tweet.in_reply_to_status_id)
-            content.write('<p>Replying to <a href="{reply_url}">@{username}</a></p>\n'.format(
-                reply_url=reply_url, username=tweet.in_reply_to_screen_name))
+            content.write(
+                '<p>Replying to <a href="{reply_url}">@{username}</a></p>\n'.format(
+                    reply_url=reply_url, username=tweet.in_reply_to_screen_name
+                )
+            )
 
         content.write('<blockquote>\n')
         self._add_sanitized_text(content)
@@ -176,8 +194,13 @@ class EnhancedTweet(object):
         content.write(
             '<p><img src="{img_url}" width="32" height="32" class="alignleft" /> '
             '-- {name} (@{username}) <a href="{url}">{created_at}</a></p>\n'.format(
-                img_url=tweet.user.profile_image_url_https, name=self.display_name, username=self.username,
-                url=self.url, created_at=tweet.created_at))
+                img_url=tweet.user.profile_image_url_https,
+                name=self.display_name,
+                username=self.username,
+                url=self.url,
+                created_at=tweet.created_at,
+            )
+        )
 
         if self.has_quoted:
             content.write('<p>{name} tweeted this while quoting the below tweet.</p>\n'.format(name=self.display_name))
@@ -193,12 +216,17 @@ def _update_feed(username: str, tweets: List[Status]):
     feed = _initialize_feed(username, profile_image_url)
     rss_items = []
     for tweet in tweets:
-        if tweet.in_reply_to_status_id is not None and tweet.retweeted_status is None \
-                and tweet.in_reply_to_user_id != tweet.user.id:
+        if (
+            tweet.in_reply_to_status_id is not None
+            and tweet.retweeted_status is None
+            and tweet.in_reply_to_user_id != tweet.user.id
+        ):
             # Home timeline shows replies between users that "I" follow. They wouldn't show up on a regular
             # User timeline. So skipping them. Based on tests, only about 1% of tweets fall under this category.
-            logging.info('%s is a reply to someone else, and not a retweet. Skipping...',
-                         _get_tweet_url(tweet.user.screen_name, tweet.id))
+            logging.info(
+                '%s is a reply to someone else, and not a retweet. Skipping...',
+                _get_tweet_url(tweet.user.screen_name, tweet.id),
+            )
             continue
         else:
             rss_items.append(EnhancedTweet(tweet).get_rss_item())
@@ -208,8 +236,8 @@ def _update_feed(username: str, tweets: List[Status]):
     if max_old_items > 0:
         rss_items.extend(_get_current_rss_items(feed_path)[:max_old_items])
     full_feed = '{feed_header}{items}\n</channel>\n</rss>'.format(
-        feed_header=feed.replace('</channel>', '').replace('</rss>', ''),
-        items='\n'.join(rss_items))
+        feed_header=feed.replace('</channel>', '').replace('</rss>', ''), items='\n'.join(rss_items),
+    )
     with open(feed_path, 'w') as xfd:
         xfd.write(re.sub(r'\n+', '\n', full_feed))
 
@@ -255,5 +283,7 @@ def generate_feeds():
     while True:
         items_created = _generate_feeds_once()
         if items_created == 0:
-            logging.info('No new tweets in DB. Sleeping %ss.', Config.SLEEP_ON_CATCHING_UP_SECONDS)
+            logging.info(
+                'No new tweets in DB. Sleeping %ss.', Config.SLEEP_ON_CATCHING_UP_SECONDS,
+            )
             time.sleep(Config.SLEEP_ON_CATCHING_UP_SECONDS)

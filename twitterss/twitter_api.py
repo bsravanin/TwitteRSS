@@ -12,7 +12,12 @@ from requests.exceptions import RequestException
 from twitterss import db
 from twitterss.config import Config
 
-CREDENTIAL_KEYS = {'consumer_key', 'consumer_secret', 'access_token_key', 'access_token_secret'}
+CREDENTIAL_KEYS = {
+    'consumer_key',
+    'consumer_secret',
+    'access_token_key',
+    'access_token_secret',
+}
 
 
 def _get_conn() -> twitter.Api:
@@ -49,22 +54,26 @@ def fetch_timeline():
                 db.save_tweets(tweets)
                 logging.info('Fetched and saved %s tweets.', len(tweets))
             else:
-                logging.info('No new tweets in timeline. Sleeping %ss.', Config.SLEEP_ON_CATCHING_UP_SECONDS)
+                logging.info(
+                    'No new tweets in timeline. Sleeping %ss.', Config.SLEEP_ON_CATCHING_UP_SECONDS,
+                )
                 time.sleep(Config.SLEEP_ON_CATCHING_UP_SECONDS)
         except RequestException:
-            logging.exception('Unknown exception while making request. Sleeping %ss and refreshing connection.',
-                              Config.SLEEP_ON_CATCHING_UP_SECONDS)
+            logging.exception(
+                'Unknown exception while making request. Sleeping %ss and refreshing connection.',
+                Config.SLEEP_ON_CATCHING_UP_SECONDS,
+            )
             time.sleep(Config.SLEEP_ON_CATCHING_UP_SECONDS)
             api = _get_conn()
         except TwitterError:
             logging.exception('Hit rate-limit while getting home timeline.')
-            get_home_timeline_rate_limit = \
-                api.CheckRateLimit('https://api.twitter.com/1.1/statuses/home_timeline.json')
+            get_home_timeline_rate_limit = api.CheckRateLimit('https://api.twitter.com/1.1/statuses/home_timeline.json')
             duration = max(int(get_home_timeline_rate_limit.reset - time.time()) + 2, 0)
             logging.info('Hit rate-limits. Sleeping %s seconds.', duration)
             time.sleep(duration)
             api = _get_conn()
         except Exception as e:
-            logging.exception('Error writing data to DB. Saving current data to %s for investigation.',
-                              _save_state(tweets))
+            logging.exception(
+                'Error writing data to DB. Saving current data to %s for investigation.', _save_state(tweets),
+            )
             raise e
