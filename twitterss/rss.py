@@ -283,7 +283,5 @@ def generate_feeds():
     while True:
         items_created = _generate_feeds_once()
         if items_created == 0:
-            logging.info(
-                'No new tweets in DB. Sleeping %ss.', Config.SLEEP_ON_CATCHING_UP_SECONDS,
-            )
+            logging.info('No new tweets in DB. Sleeping %ss.', Config.SLEEP_ON_CATCHING_UP_SECONDS)
             time.sleep(Config.SLEEP_ON_CATCHING_UP_SECONDS)

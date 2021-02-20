@@ -8,17 +8,17 @@ per followed user.
 Setup
 =====
 1. Clone or download [the code](https://github.com/bsravanin/TwitteRSS).
-1. Update the configuration in `TwitteRSS/twitterss/config.py` per your requirements. Especially pay
+2. Update the configuration in `TwitteRSS/twitterss/config.py` per your requirements. Especially pay
    attention to `FEED_ROOT_URL` and `CREDENTIALS`. For the latter, also refer [Security](#security)
    and setup your Twitter API credentials.
-1. Run the following commands from a terminal:
+3. Run the following commands from a terminal:
    1. `cd TwitteRSS`
-   1. `tox -e py37`
-   1. `source .tox/py37/bin/activate`
-   1. `./twitterss/twitterss.py`
-1. Open [feeds/twitterss.html](feeds/twitterss.html) in a browser.
+   2. `tox -e py39`
+   3. `source .tox/py39/bin/activate`
+   4. `./twitterss/twitterss.py`
+4. Open [feeds/twitterss.html](feeds/twitterss.html) in a browser.
 
-*NOTE*: I tested this using Python v3.7.x and host this on my website using Python v3.6.x, but I
+*NOTE*: I tested this using Python v3.9.x and host this on my website using Python v3.8.x, but I
 suspect it will work fine for any Python that can install
 [the requirements](https://github.com/bsravanin/TwitteRSS/blob/master/tox.ini) with trivial changes.
 
@@ -46,7 +46,7 @@ It has a few disadvantages:
 
 By using the Twitter API, TwitteRSS overcomes all 3 disadvantages, but has other disadvantages:
 * It cannot unwind URLs and show the corresponding image, headline, and snippet. See
-  [this python-twitter issue](https://github.com/bear/python-twitter/issues/515) to know more.
+  [this python-twitter issue](https://github.com/bear/python-twitter/issues/515) to learn more.
 * It cannot display polls, because Twitter provides these only in its enterprise APIs.
 * It is not available as a service.
 * It uses the application's home timeline instead of user timelines. So getting the RSS feed of a
