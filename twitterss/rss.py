@@ -109,7 +109,7 @@ class EnhancedTweet(object):
             return base_item.replace('RSS_ITEM_PLACE_HOLDER', self.get_content())
         except:
             logging.exception('Failed to create RSS item for %s.', self.url)
-            return base_item.replace('RSS_ITEM_PLACE_HOLDER', 'RSS Error. Please read {} directly.'.format(self.url),)
+            return base_item.replace('RSS_ITEM_PLACE_HOLDER', 'RSS Error. Please read {} directly.'.format(self.url))
 
     def _add_sanitized_text(self, content: StringIO):
         tweet = self.inner
@@ -236,7 +236,7 @@ def _update_feed(username: str, tweets: List[Status]):
     if max_old_items > 0:
         rss_items.extend(_get_current_rss_items(feed_path)[:max_old_items])
     full_feed = '{feed_header}{items}\n</channel>\n</rss>'.format(
-        feed_header=feed.replace('</channel>', '').replace('</rss>', ''), items='\n'.join(rss_items),
+        feed_header=feed.replace('</channel>', '').replace('</rss>', ''), items='\n'.join(rss_items)
     )
     with open(feed_path, 'w') as xfd:
         xfd.write(re.sub(r'\n+', '\n', full_feed))
@@ -263,7 +263,7 @@ def _update_feeds_html():
 
 def _generate_feeds_once(mark_tweets_as_rss_fed: bool = True) -> int:
     """Fetch new tweets from the DB and update their corresponding RSS feeds."""
-    all_new_tweets = db.get_tweets_to_rss_feed()
+    all_new_tweets = db.get_tweets_to_rss_feed(Config.RSS_MAX_ITEMS)
     if len(all_new_tweets) > 0:
         username_to_tweets = defaultdict(list)
         for tweet in all_new_tweets:
@@ -272,7 +272,9 @@ def _generate_feeds_once(mark_tweets_as_rss_fed: bool = True) -> int:
             logging.info('Updating RSS feed of %s with %s tweets.', username, len(tweets))
             _update_feed(username, tweets)
             if mark_tweets_as_rss_fed:
-                db.mark_tweets_as_rss_fed(username, tweets[0].user.name, [tweet.id for tweet in tweets])
+                db.mark_tweets_as_rss_fed(
+                    username, tweets[0].user.name, [tweet.id for tweet in tweets], Config.TTL_SECONDS
+                )
         _update_feeds_html()
     return len(all_new_tweets)
 
@@ -280,8 +282,9 @@ def _generate_feeds_once(mark_tweets_as_rss_fed: bool = True) -> int:
 def generate_feeds():
     """Periodically update RSS feeds with new tweets."""
     os.makedirs(Config.FEED_ROOT_PATH, exist_ok=True)
+    refresh_interval_seconds = Config.REFRESH_INTERVAL_SECONDS
     while True:
         items_created = _generate_feeds_once()
         if items_created == 0:
-            logging.info('No new tweets in DB. Sleeping %ss.', Config.SLEEP_ON_CATCHING_UP_SECONDS)
-            time.sleep(Config.SLEEP_ON_CATCHING_UP_SECONDS)
+            logging.info('No new tweets in DB. Sleeping %ss.', refresh_interval_seconds)
+            time.sleep(refresh_interval_seconds)

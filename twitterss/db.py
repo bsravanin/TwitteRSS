@@ -13,22 +13,23 @@ from twitterss.config import Config
 
 STATUS_TABLE = 'statuses'
 RSS_COLUMN = 'rss_update'
-STATUS_COLUMNS = OrderedDict({'id': 'INTEGER PRIMARY KEY', 'tweet_json': 'TEXT', RSS_COLUMN: 'INTEGER',})
+STATUS_COLUMNS = OrderedDict({'id': 'INTEGER PRIMARY KEY', 'tweet_json': 'TEXT', RSS_COLUMN: 'INTEGER'})
 STATUS_INDICES = [RSS_COLUMN]
 
 USER_TABLE = 'users'
-USER_COLUMNS = OrderedDict({'username': 'TEXT PRIMARY KEY', 'display_name': 'TEXT', RSS_COLUMN: 'INTEGER',})
+USER_COLUMNS = OrderedDict({'username': 'TEXT PRIMARY KEY', 'display_name': 'TEXT', RSS_COLUMN: 'INTEGER'})
 
 
 def _get_conn(read_only: bool = True) -> sqlite3.Connection:
     """Get a connection to the DB."""
-    if not os.path.isfile(Config.DB_PATH):
-        logging.warning('Could not find an existing DB at %s. Creating one...', Config.DB_PATH)
+    db_path = Config.DB_PATH
+    if not os.path.isfile(db_path):
+        logging.warning('Could not find an existing DB at %s. Creating one...', db_path)
 
     if read_only:
-        return sqlite3.connect('file:{}?mode=ro'.format(Config.DB_PATH), uri=True)
+        return sqlite3.connect('file:{}?mode=ro'.format(db_path), uri=True)
     else:
-        return sqlite3.connect(Config.DB_PATH, isolation_level=None)
+        return sqlite3.connect(db_path, isolation_level=None)
 
 
 def _create_table(conn: sqlite3.Connection, table: str, columns: OrderedDict):
@@ -71,35 +72,31 @@ def save_tweets(statuses: List[Status]):
     col_names = ', '.join(["'{}'".format(key) for key in STATUS_COLUMNS])
     col_values = ', '.join(['?'] * len(STATUS_COLUMNS))
     with _get_conn(read_only=False) as conn:
-        conn.executemany(
-            'INSERT OR IGNORE INTO {} ({}) VALUES ({})'.format(STATUS_TABLE, col_names, col_values), rows,
-        )
+        conn.executemany('INSERT OR IGNORE INTO {} ({}) VALUES ({})'.format(STATUS_TABLE, col_names, col_values), rows)
 
 
-def get_tweets_to_rss_feed():
+def get_tweets_to_rss_feed(limit: int):
     """Get all tweets that are known to have not been included in RSS feeds yet. Read them in order, and reverse
     before passing. Reading them in reverse directly will lead to reading older tweets after newer ones."""
     with _get_conn() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            'SELECT tweet_json FROM {} WHERE {} = 0 ORDER BY id LIMIT {}'.format(
-                STATUS_TABLE, RSS_COLUMN, Config.RSS_MAX_ITEMS
-            )
+            'SELECT tweet_json FROM {} WHERE {} = 0 ORDER BY id LIMIT {}'.format(STATUS_TABLE, RSS_COLUMN, limit)
         )
         tweets = [Status.NewFromJsonDict(json.loads(row[0])) for row in cursor.fetchall()]
         tweets.reverse()
         return tweets
 
 
-def mark_tweets_as_rss_fed(username: str, display_name: str, status_ids: List[int]):
-    """To avoid duplicate RSS items, and to be able to periodically delete old data."""
+def mark_tweets_as_rss_fed(username: str, display_name: str, status_ids: List[int], ttl_seconds: int):
+    """To avoid duplicate RSS items, and to be able to periodically delete data older than ttl_seconds."""
     if len(status_ids) == 0:
         return
     update_time = int(time.time())
     status_col_values = ', '.join(['?'] * len(status_ids))
     user_col_names = ', '.join(["'{}'".format(key) for key in USER_COLUMNS])
     user_col_values = ', '.join(['?'] * len(USER_COLUMNS))
-    max_rss_time = update_time - Config.DELETE_TWEETS_OLDER_THAN_SECONDS
+    max_rss_time = update_time - ttl_seconds
     with _get_conn(read_only=False) as conn:
         conn.execute(
             'UPDATE {} SET {} = {} WHERE id IN ({})'.format(STATUS_TABLE, RSS_COLUMN, update_time, status_col_values),

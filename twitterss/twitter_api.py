@@ -22,10 +22,11 @@ CREDENTIAL_KEYS = {
 
 def _get_conn() -> twitter.Api:
     """Get a connection to the Twitter API."""
-    if not os.path.isfile(Config.CREDENTIALS):
-        raise IOError('Could not find credentials at {}.'.format(Config.CREDENTIALS))
+    creds_file = Config.CREDENTIALS
+    if not os.path.isfile(creds_file):
+        raise IOError('Could not find credentials at {}.'.format(creds_file))
 
-    with open(Config.CREDENTIALS) as cfd:
+    with open(creds_file) as cfd:
         credentials = json.load(cfd)
         if set(credentials.keys()) == CREDENTIAL_KEYS:
             return twitter.Api(**credentials, tweet_mode='extended')
@@ -44,6 +45,7 @@ def _save_state(tweets: object):
 def fetch_timeline():
     """Periodically fetch tweets from home timeline and save them to DB."""
     api = _get_conn()
+    refresh_interval_seconds = Config.REFRESH_INTERVAL_SECONDS
     while True:
         tweets = None
         try:
@@ -54,16 +56,14 @@ def fetch_timeline():
                 db.save_tweets(tweets)
                 logging.info('Fetched and saved %s tweets.', len(tweets))
             else:
-                logging.info(
-                    'No new tweets in timeline. Sleeping %ss.', Config.SLEEP_ON_CATCHING_UP_SECONDS,
-                )
-                time.sleep(Config.SLEEP_ON_CATCHING_UP_SECONDS)
+                logging.info('No new tweets in timeline. Sleeping %ss.', refresh_interval_seconds)
+                time.sleep(refresh_interval_seconds)
         except RequestException:
             logging.exception(
                 'Unknown exception while making request. Sleeping %ss and refreshing connection.',
-                Config.SLEEP_ON_CATCHING_UP_SECONDS,
+                refresh_interval_seconds,
             )
-            time.sleep(Config.SLEEP_ON_CATCHING_UP_SECONDS)
+            time.sleep(refresh_interval_seconds)
             api = _get_conn()
         except TwitterError:
             logging.exception('Hit rate-limit while getting home timeline.')
@@ -74,6 +74,6 @@ def fetch_timeline():
             api = _get_conn()
         except Exception as e:
             logging.exception(
-                'Error writing data to DB. Saving current data to %s for investigation.', _save_state(tweets),
+                'Error writing data to DB. Saving current data to %s for investigation.', _save_state(tweets)
             )
             raise e
