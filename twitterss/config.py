@@ -25,10 +25,15 @@ class Config(object):
     TTL_SECONDS = 86400 * 7
 
     # Max number of items kept in the RSS feed. Blogs appear to use 10.
-    RSS_MAX_ITEMS = 100
+    RSS_MAX_ITEMS = 10
 
     # How quickly to retry after the timeline is all caught up.
     REFRESH_INTERVAL_SECONDS = 3600
 
     # To save error data during crashes.
     CRASH_DIR = os.path.join(_root, 'crash')
+
+    # Daily Digest.
+    # HH:MM:SS represents the UTC time at which the next item in the RSS feed should be created.
+    # Set to None to disable.
+    DAILY_DIGEST = '08:00:00'

@@ -80,8 +80,12 @@ def get_tweets_to_rss_feed(limit: int):
     before passing. Reading them in reverse directly will lead to reading older tweets after newer ones."""
     with _get_conn() as conn:
         cursor = conn.cursor()
+        if limit > 0:
+            limit_clause = ' LIMIT {}'.format(limit)
+        else:
+            limit_clause = ''
         cursor.execute(
-            'SELECT tweet_json FROM {} WHERE {} = 0 ORDER BY id LIMIT {}'.format(STATUS_TABLE, RSS_COLUMN, limit)
+            'SELECT tweet_json FROM {} WHERE {} = 0 ORDER BY id{}'.format(STATUS_TABLE, RSS_COLUMN, limit_clause)
         )
         tweets = [Status.NewFromJsonDict(json.loads(row[0])) for row in cursor.fetchall()]
         tweets.reverse()
@@ -121,3 +125,11 @@ def get_all_users() -> List[tuple]:
         cursor = conn.cursor()
         cursor.execute('SELECT * FROM {} ORDER BY username'.format(USER_TABLE))
         return [(row['username'], row['display_name'], row[RSS_COLUMN]) for row in cursor.fetchall()]
+
+
+def get_time_since_last_rss_update() -> int:
+    """Returns time since last RSS update."""
+    with _get_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT MAX({}) FROM {}'.format(RSS_COLUMN, USER_TABLE))
+        return int(time.time()) - int(cursor.fetchone()[0])

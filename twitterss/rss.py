@@ -209,30 +209,67 @@ class EnhancedTweet(object):
         return content.getvalue()
 
 
-def _update_feed(username: str, tweets: List[Status]):
+def _should_include_tweet(tweet: Status) -> bool:
+    """Home timeline shows replies between users that "I" follow. They wouldn't show up on a regular User timeline.
+    So skipping them. Based on tests, only about 1% of tweets fall under this category."""
+    if (
+        tweet.in_reply_to_status_id is not None
+        and tweet.retweeted_status is None
+        and tweet.in_reply_to_user_id != tweet.user.id
+    ):
+        logging.info(
+            '%s is a reply to someone else, and not a retweet. Skipping...',
+            _get_tweet_url(tweet.user.screen_name, tweet.id),
+        )
+        return False
+    else:
+        return True
+
+
+def _update_feed(username: str, tweets: List[Status], use_batching: bool):
     """Assumption: All tweets in the list are owned by the username, and are to be written to that user's RSS feed."""
     feed_path = os.path.join(Config.FEED_ROOT_PATH, _get_feed_name(username))
     profile_image_url = tweets[0].user.profile_image_url_https or 'https://abs.twimg.com/favicons/win8-tile-144.png'
     feed = _initialize_feed(username, profile_image_url)
-    rss_items = []
-    for tweet in tweets:
-        if (
-            tweet.in_reply_to_status_id is not None
-            and tweet.retweeted_status is None
-            and tweet.in_reply_to_user_id != tweet.user.id
-        ):
-            # Home timeline shows replies between users that "I" follow. They wouldn't show up on a regular
-            # User timeline. So skipping them. Based on tests, only about 1% of tweets fall under this category.
-            logging.info(
-                '%s is a reply to someone else, and not a retweet. Skipping...',
-                _get_tweet_url(tweet.user.screen_name, tweet.id),
+    if use_batching:
+        tweet_contents = []
+        first_enhanced_tweet = None
+        last_enhanced_tweet = None
+        for tweet in reversed(tweets):
+            last_enhanced_tweet = EnhancedTweet(tweet)
+            if first_enhanced_tweet is None:
+                first_enhanced_tweet = last_enhanced_tweet
+            try:
+                tweet_contents.append(last_enhanced_tweet.get_content())
+            except:
+                logging.exception('Failed to create RSS content for %s.', last_enhanced_tweet.url)
+                tweet_contents.append('RSS Error. Please read {} directly.'.format(last_enhanced_tweet.url))
+        content = '{}\n'.format('-' * 100).join(tweet_contents)
+        rss_items = [
+            '''
+<item>
+    <title>Tweets by {display_name} since {start_date}</title>
+    <link>{url}</link>
+    <pubDate>{end_date}</pubDate>
+    <dc:creator>{display_name}</dc:creator>
+    <category>Tweets</category>
+    <guid isPermaLink="false">{url}</guid>
+    <description />
+    <content:encoded><![CDATA[
+        {content}
+    ]]></content:encoded>
+</item>'''.format(
+                display_name=first_enhanced_tweet.display_name,
+                url=_get_user_url(username),
+                start_date=_rss_time_format(first_enhanced_tweet.inner.created_at_in_seconds),
+                end_date=_rss_time_format(last_enhanced_tweet.inner.created_at_in_seconds),
+                content=content,
             )
-            continue
-        else:
-            rss_items.append(EnhancedTweet(tweet).get_rss_item())
-    if len(rss_items) == 0:
-        return
-    max_old_items = Config.RSS_MAX_ITEMS - len(tweets)
+        ]
+        max_old_items = Config.RSS_MAX_ITEMS - 1
+    else:
+        rss_items = [EnhancedTweet(tweet).get_rss_item() for tweet in tweets]
+        max_old_items = Config.RSS_MAX_ITEMS - len(tweets)
     if max_old_items > 0:
         rss_items.extend(_get_current_rss_items(feed_path)[:max_old_items])
     full_feed = '{feed_header}{items}\n</channel>\n</rss>'.format(
@@ -261,16 +298,17 @@ def _update_feeds_html():
         hfd.write(full_html)
 
 
-def _generate_feeds_once(mark_tweets_as_rss_fed: bool = True) -> int:
+def _generate_feeds_once(use_batching: bool, mark_tweets_as_rss_fed: bool = True) -> int:
     """Fetch new tweets from the DB and update their corresponding RSS feeds."""
-    all_new_tweets = db.get_tweets_to_rss_feed(Config.RSS_MAX_ITEMS)
+    all_new_tweets = db.get_tweets_to_rss_feed(-1 if use_batching else Config.RSS_MAX_ITEMS)
     if len(all_new_tweets) > 0:
         username_to_tweets = defaultdict(list)
         for tweet in all_new_tweets:
-            username_to_tweets[tweet.user.screen_name].append(tweet)
+            if _should_include_tweet(tweet):
+                username_to_tweets[tweet.user.screen_name].append(tweet)
         for username, tweets in username_to_tweets.items():
             logging.info('Updating RSS feed of %s with %s tweets.', username, len(tweets))
-            _update_feed(username, tweets)
+            _update_feed(username, tweets, use_batching)
             if mark_tweets_as_rss_fed:
                 db.mark_tweets_as_rss_fed(
                     username, tweets[0].user.name, [tweet.id for tweet in tweets], Config.TTL_SECONDS
@@ -283,8 +321,28 @@ def generate_feeds():
     """Periodically update RSS feeds with new tweets."""
     os.makedirs(Config.FEED_ROOT_PATH, exist_ok=True)
     refresh_interval_seconds = Config.REFRESH_INTERVAL_SECONDS
+    if Config.DAILY_DIGEST is None:
+        daily_digest_time = None
+    else:
+        daily_digest_time = datetime.strptime(Config.DAILY_DIGEST, '%H:%M:%S').time()
+
     while True:
-        items_created = _generate_feeds_once()
-        if items_created == 0:
-            logging.info('No new tweets in DB. Sleeping %ss.', refresh_interval_seconds)
+        if daily_digest_time is None:
+            items_created = _generate_feeds_once(use_batching=False)
+            if items_created == 0:
+                logging.info('No new tweets in DB. Sleeping %ss.', refresh_interval_seconds)
+                time.sleep(refresh_interval_seconds)
+        else:
+            now = datetime.utcnow()
+            daily_digest_date_time = datetime.combine(now, daily_digest_time)
+            time_since_last_rss_update = db.get_time_since_last_rss_update()
+            if now >= daily_digest_date_time and time_since_last_rss_update >= 86400:
+                _generate_feeds_once(use_batching=True)
+            else:
+                logging.info(
+                    'Not time to update RSS yet. Daily digest time is %s, time since last RSS update is %ss. Sleeping %ss.',
+                    daily_digest_date_time,
+                    time_since_last_rss_update,
+                    refresh_interval_seconds,
+                )
             time.sleep(refresh_interval_seconds)
