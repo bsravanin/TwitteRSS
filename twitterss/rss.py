@@ -260,7 +260,7 @@ def _update_feed(username: str, tweets: List[Status], use_batching: bool):
     ]]></content:encoded>
 </item>'''.format(
                 display_name=first_enhanced_tweet.display_name,
-                url=_get_user_url(username),
+                url=last_enhanced_tweet.url,
                 start_date=_rss_time_format(first_enhanced_tweet.inner.created_at_in_seconds),
                 end_date=_rss_time_format(last_enhanced_tweet.inner.created_at_in_seconds),
                 content=content,
@@ -317,32 +317,27 @@ def _generate_feeds_once(use_batching: bool, mark_tweets_as_rss_fed: bool = True
     return len(all_new_tweets)
 
 
+def _interval_between_generating_feeds(refresh_interval_seconds: int, daily_digest_time: str) -> float:
+    if daily_digest_time is None:
+        return refresh_interval_seconds
+    else:
+        # Batching
+        now = datetime.utcnow()
+        daily_digest_date_time = datetime.combine(now, datetime.strptime(daily_digest_time, '%H:%M:%S').time())
+        delta = (daily_digest_date_time - now).total_seconds()
+        if delta > 0:
+            return delta
+        else:
+            return 86400 + delta
+
+
 def generate_feeds():
     """Periodically update RSS feeds with new tweets."""
     os.makedirs(Config.FEED_ROOT_PATH, exist_ok=True)
-    refresh_interval_seconds = Config.REFRESH_INTERVAL_SECONDS
-    if Config.DAILY_DIGEST is None:
-        daily_digest_time = None
-    else:
-        daily_digest_time = datetime.strptime(Config.DAILY_DIGEST, '%H:%M:%S').time()
+    use_batching = Config.DAILY_DIGEST is not None
 
     while True:
-        if daily_digest_time is None:
-            items_created = _generate_feeds_once(use_batching=False)
-            if items_created == 0:
-                logging.info('No new tweets in DB. Sleeping %ss.', refresh_interval_seconds)
-                time.sleep(refresh_interval_seconds)
-        else:
-            now = datetime.utcnow()
-            daily_digest_date_time = datetime.combine(now, daily_digest_time)
-            time_since_last_rss_update = db.get_time_since_last_rss_update()
-            if now >= daily_digest_date_time and time_since_last_rss_update >= 86400:
-                _generate_feeds_once(use_batching=True)
-            else:
-                logging.info(
-                    'Not time to update RSS yet. Daily digest time is %s, time since last RSS update is %ss. Sleeping %ss.',
-                    daily_digest_date_time,
-                    time_since_last_rss_update,
-                    refresh_interval_seconds,
-                )
-            time.sleep(refresh_interval_seconds)
+        _generate_feeds_once(use_batching=use_batching)
+        interval = _interval_between_generating_feeds(Config.REFRESH_INTERVAL_SECONDS, Config.DAILY_DIGEST)
+        logging.info('Sleeping %ss before attempting to generate feeds again.', interval)
+        time.sleep(interval)

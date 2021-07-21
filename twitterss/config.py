@@ -28,7 +28,7 @@ class Config(object):
     RSS_MAX_ITEMS = 10
 
     # How quickly to retry after the timeline is all caught up.
-    REFRESH_INTERVAL_SECONDS = 3600
+    REFRESH_INTERVAL_SECONDS = 600
 
     # To save error data during crashes.
     CRASH_DIR = os.path.join(_root, 'crash')
