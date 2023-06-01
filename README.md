@@ -5,6 +5,11 @@ per followed user.
 
 [Example Feeds](https://bsravan.in/feeds/twitterss.html)
 
+**ARCHIVED** After nearly 4 years, this project has been shutdown on 2023-05-31, and will no longer
+be maintained because Twitter stopped supporting its v1 API. Porting to Twitter's v2 API is
+technically doable, but the API's free tier is too restrictive and the basic tier too expensive for
+a fun application such as this.
+
 Setup
 =====
 1. Clone or download [the code](https://github.com/bsravanin/TwitteRSS).
